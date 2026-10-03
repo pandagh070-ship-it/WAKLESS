@@ -6,7 +6,7 @@ on:
     branches: [ main ]
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   android:
@@ -44,17 +44,19 @@ jobs:
       - name: Sync web app
         working-directory: android-capacitor
         run: npx cap sync android
-      - name: Build debug APK
+      - name: Build APK
         working-directory: android-capacitor/android
         run: ./gradlew assembleDebug
-      - name: Upload APK
+      - name: Prepare APK
+        run: cp android-capacitor/android/app/build/outputs/apk/debug/app-debug.apk WAKELESS-Android.apk
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: WAKELESS-Android-APK
-          path: android-capacitor/android/app/build/outputs/apk/debug/app-debug.apk
+          path: WAKELESS-Android.apk
 
   windows:
-    name: Windows EXE
+    name: Windows Installer
     runs-on: windows-latest
     steps:
       - name: Checkout
@@ -73,14 +75,38 @@ jobs:
       - name: Install Electron dependencies
         working-directory: windows-electron
         run: npm install
-      - name: Build EXE package
+      - name: Build Windows installer
         working-directory: windows-electron
-        run: npm run dist
-      - name: Zip EXE package
-        shell: pwsh
-        run: Compress-Archive -Path windows-electron/dist/WAKELESS-win32-x64 -DestinationPath WAKELESS-Windows-EXE.zip -Force
-      - name: Upload EXE package
+        run: npx electron-builder --win nsis --x64 --config.directories.output=dist-installer --config.productName=WAKELESS --config.win.artifactName=WAKELESS-Windows-Setup.exe
+      - name: Upload Windows installer artifact
         uses: actions/upload-artifact@v4
         with:
           name: WAKELESS-Windows-EXE
-          path: WAKELESS-Windows-EXE.zip
+          path: windows-electron/dist-installer/WAKELESS-Windows-Setup.exe
+
+  release:
+    name: Publish stable downloads
+    needs: [android, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download APK
+        uses: actions/download-artifact@v4
+        with:
+          name: WAKELESS-Android-APK
+          path: release
+      - name: Download Windows installer
+        uses: actions/download-artifact@v4
+        with:
+          name: WAKELESS-Windows-EXE
+          path: release
+      - name: Create or update release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh release view v1.0.0 --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "Release v1.0.0 already exists"
+          else
+            gh release create v1.0.0 --repo "${{ github.repository }}" --title "WAKLESS v1.0.0" --notes "WAKLESS stable downloads for Android and Windows."
+          fi
+          gh release upload v1.0.0 release/WAKELESS-Android.apk --repo "${{ github.repository }}" --clobber
+          gh release upload v1.0.0 release/WAKELESS-Windows-Setup.exe --repo "${{ github.repository }}" --clobber
