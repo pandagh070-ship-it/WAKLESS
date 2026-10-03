@@ -1,0 +1,79 @@
+name: Build WAKELESS
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+jobs:
+  android:
+    name: Android APK
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: android-capacitor/package.json
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+      - name: Install Capacitor
+        working-directory: android-capacitor
+        run: npm install
+      - name: Add Android platform
+        working-directory: android-capacitor
+        run: npx cap add android
+      - name: Sync web app
+        working-directory: android-capacitor
+        run: npx cap sync android
+      - name: Build debug APK
+        working-directory: android-capacitor/android
+        run: ./gradlew assembleDebug
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: WAKELESS-Android-APK
+          path: android-capacitor/android/app/build/outputs/apk/debug/app-debug.apk
+
+  windows:
+    name: Windows EXE
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: windows-electron/package.json
+      - name: Copy game into Electron package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force windows-electron/web | Out-Null
+          Copy-Item web/index.html windows-electron/web/index.html -Force
+      - name: Install Electron dependencies
+        working-directory: windows-electron
+        run: npm install
+      - name: Build EXE package
+        working-directory: windows-electron
+        run: npm run dist
+      - name: Zip EXE package
+        shell: pwsh
+        run: Compress-Archive -Path windows-electron/dist/WAKELESS-win32-x64 -DestinationPath WAKELESS-Windows-EXE.zip -Force
+      - name: Upload EXE package
+        uses: actions/upload-artifact@v4
+        with:
+          name: WAKELESS-Windows-EXE
+          path: WAKELESS-Windows-EXE.zip
